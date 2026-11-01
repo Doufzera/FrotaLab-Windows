@@ -105,6 +105,17 @@ class FusionTest(unittest.TestCase):
         with self.assertRaises(ET.ParseError):
             ET.parse(original)
 
+    def test_missing_yft_is_flagged_and_not_counted_as_running_vehicle(self):
+        self.model(1, "a", "broken")
+        self.model(2, "b", "good2")
+        self.model(3, "c", "good3")
+        self.model(4, "d", "good4")
+        (self.inputs[0] / "PLOKS_CARS/stream/[ACURA]/a/broken.yft").unlink()
+        output, report = build_fusion(self.inputs, self.res)
+        self.assertIn("broken", report["resumo"]["spawns_sem_selecao"])
+        self.assertEqual(report["resumo"]["spawns_incluidos"], 3)
+        self.assertFalse((output / "PLOKS_CARS/data/[ACURA]/a/vehicles.meta").exists())
+
     def test_zip_sources_and_guard_traversal(self):
         self.model(1, "a", "a")
         self.model(2, "b", "b")
