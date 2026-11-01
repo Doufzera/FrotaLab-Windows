@@ -17,6 +17,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import xml.etree.ElementTree as ET
 from installer import GROUPS, destination_for, install_pack
+from metadata_repair import parse_vehicle_meta
 
 SOURCES = [
     ("PLOKMJNB - Civ Car Pack", "https://codeload.github.com/PLOKMJNB/FiveM-Civ-Car-Pack/zip/refs/heads/master"),
@@ -258,11 +259,14 @@ def split_pack1_by_brand(input_dir: Path, output_dir: Path, notify=lambda _: Non
             raise ValueError(f"Grupo incompleto: {group_name}")
 
         models = set()
-        for meta_file in data_group.rglob("vehicles.meta"):
-            try:
-                root = ET.parse(meta_file).getroot()
-            except ET.ParseError as exc:
-                raise ValueError(f"vehicles.meta inválido: {meta_file}: {exc}") from exc
+        corrected_metas = {}
+        repairs = []
+        for meta_file in data_group.rglob("vehicles*.meta"):
+            root, corrected, count = parse_vehicle_meta(meta_file)
+            if corrected is not None:
+                corrected_metas[meta_file] = corrected
+                repairs.append(f"{meta_file.relative_to(source)}: {count} separador(es) XML corrigido(s)")
+                notify(f"Reparo XML no Pack 1: {group_name}/{meta_file.name} ({count} separador(es))")
             for item in root.findall(".//InitDatas/Item"):
                 for tag in ("modelName", "gameName"):
                     value = item.findtext(tag)
@@ -304,7 +308,15 @@ def split_pack1_by_brand(input_dir: Path, output_dir: Path, notify=lambda _: Non
                 z.writestr(f"{resource_name}/vehicle_names.lua", names_lua)
                 for file in files_data:
                     rel = file.relative_to(data_group).as_posix()
-                    z.write(file, f"{resource_name}/data/{group_name}/{rel}")
+                    out_path = f"{resource_name}/data/{group_name}/{rel}"
+                    if file in corrected_metas:
+                        z.writestr(out_path, corrected_metas[file])
+                    else:
+                        z.write(file, out_path)
+                if repairs:
+                    z.writestr(f"{resource_name}/CORRECOES_META.txt",
+                               "Correções realizadas apenas nesta cópia:\n" +
+                               "\n".join(repairs) + "\n")
                 for file in files_stream:
                     rel = file.relative_to(stream_group).as_posix()
                     z.write(file, f"{resource_name}/stream/{group_name}/{rel}")
@@ -319,7 +331,8 @@ def split_pack1_by_brand(input_dir: Path, output_dir: Path, notify=lambda _: Non
         created.append(final_zip.name)
         manifest_report.append({"resource": resource_name, "brand": brand,
                                 "models_found": sorted(models),
-                                "data_files": len(files_data), "stream_files": len(files_stream)})
+                                "data_files": len(files_data), "stream_files": len(files_stream),
+                                "xml_corrections": repairs})
         notify(f"Pack 1 dividido: {index}/{len(data_groups)} - {resource_name}")
 
     (output_dir / "INSTRUCOES_PACK1.txt").write_text(
