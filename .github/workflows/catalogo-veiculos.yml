@@ -1,0 +1,36 @@
+name: Catalogo Excel FrotaLab
+
+on:
+  push:
+    paths:
+      - 'tools/export_vehicle_table.py'
+      - '.github/workflows/catalogo-veiculos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  catalogo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Instalar openpyxl
+        run: python -m pip install openpyxl==3.1.5
+      - name: Validar sintaxe
+        run: python -m py_compile tools/export_vehicle_table.py
+      - name: Gerar catalogo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python tools/export_vehicle_table.py
+      - name: Disponibilizar planilha
+        uses: actions/upload-artifact@v4
+        with:
+          name: FrotaLab-Catalogo-Veiculos
+          path: inventario_veiculos/
+          retention-days: 90
+          if-no-files-found: error
