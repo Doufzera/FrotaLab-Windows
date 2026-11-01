@@ -150,26 +150,56 @@ def audit(root: Path, report_dir: Path, notify=lambda _: None):
 
 
 def export_packages(input_dir: Path, output_dir: Path, notify=lambda _: None):
-    """One ZIP per complete imported source. Never mix or strip dependencies."""
+    """Export sources as archives, correcting the PLOKS_CARS resource wrapper.
+
+    The other sources remain backups: they have NOT been normalized or checked
+    for FiveM runtime conflicts. Nothing is deleted or 3D-optimized.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     made = []
     for folder in sorted(input_dir.iterdir()):
         if not folder.is_dir():
             continue
-        output = output_dir / (folder.name + ".zip")
+        source = folder
+        output_name = folder.name + ".zip"
+        include_resource_dir = False
+        if folder.name == "pacote_01":
+            candidates = list(folder.rglob("PLOKS_CARS/fxmanifest.lua"))
+            if len(candidates) != 1:
+                raise ValueError(
+                    "PLOKS_CARS/fxmanifest.lua não encontrado de forma única. "
+                    "Verifique a extração do Pack 1 antes de exportar."
+                )
+            source = candidates[0].parent
+            if not (source / "stream").is_dir() or not (source / "data").is_dir():
+                raise ValueError("PLOKS_CARS sem as pastas data/ e stream/.")
+            output_name = "PLOKS_CARS.zip"
+            include_resource_dir = True
+        output = output_dir / output_name
         partial = output.with_suffix(".partial")
         try:
             with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED,
                                  compresslevel=1, allowZip64=True) as z:
-                for idx, path in enumerate(folder.rglob("*")):
-                    if path.is_file():
-                        z.write(path, path.relative_to(folder).as_posix())
-                        if idx % 500 == 0:
-                            notify(f"Empacotando {folder.name}: {idx} entradas")
-            partial.replace(output)
-            with zipfile.ZipFile(output) as z:
+                for idx, path in enumerate(source.rglob("*")):
+                    if not path.is_file():
+                        continue
+                    relative = path.relative_to(source).as_posix()
+                    archive_path = (source.name + "/" + relative
+                                    if include_resource_dir else relative)
+                    z.write(path, archive_path)
+                    if idx % 500 == 0:
+                        notify(f"Empacotando {output_name}: {idx} entradas")
+            with zipfile.ZipFile(partial) as z:
                 if z.testzip() is not None:
-                    raise ValueError(f"Falha CRC exportando {output.name}")
+                    raise ValueError(f"Falha CRC exportando {output_name}")
+                if include_resource_dir:
+                    names = set(z.namelist())
+                    for required in ("PLOKS_CARS/fxmanifest.lua",
+                                     "PLOKS_CARS/server.lua",
+                                     "PLOKS_CARS/vehicle_names.lua"):
+                        if required not in names:
+                            raise ValueError(f"Arquivo ausente no ZIP: {required}")
+            partial.replace(output)
             made.append(output.name)
         finally:
             partial.unlink(missing_ok=True)
