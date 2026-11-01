@@ -46,3 +46,12 @@
 - [carros4]: LIVID_LF_CARS e seus recursos de som auxiliares, em pastas separadas.
 
 **Cuidado**: ensure [carros] pode ativar muitas marcas e reintroduzir o travamento. Após a instalação, no console txAdmin use refresh seguido de ensure CIV_ACURA e avance uma marca por vez. Teste também os demais pacotes separadamente; nomes de spawn repetidos continuam sendo uma fonte possível de conflito. **Instalar os arquivos não inicia os recursos no servidor**. O processo copia arquivos, não altera o server.cfg nem reinicia o FiveM.
+
+
+## Erro de XML no Pack 1 — Bugatti Bolide
+
+A origem PLOKMJNB/FiveM-Civ-Car-Pack inclui um comentário XML inválido na linha 132 do arquivo `PLOKS_CARS/data/[BUGATTI]/bolide/vehicles.meta`. Agora, ao instalar o Pack 1 (inteiro ou dividido) ou exportá-lo por fabricante, o FrotaLab identifica separadores de hífens malformados, corrige-os **somente na cópia** e registra `CORRECOES_META.txt` no recurso corrigido. O arquivo na pasta `originais` permanece intocado. Outros tipos de XML inválido não são corrigidos automaticamente: serão relatados para revisão manual.
+
+Se a instalação anterior falhou, preserve backup dos recursos existentes, remova ou renomeie a categoria `resources/[carros]` antiga **para fora da pasta resources**, e refaça a instalação do Pack 1 na aba **Instalação**, com a opção dividir por fabricantes marcada. O FrotaLab não sobrescreve categoria já ocupada. **Não é necessário baixar tudo outra vez se os arquivos originais já estiverem em `Documents/FrotaLab/originais/pacote_01`**.
+
+Depois, no console txAdmin, use `refresh` e `ensure CIV_ACURA`; caso funcione, experimente `ensure CIV_BUGATTI`. Não use `ensure PLOKS_CARS` ou `ensure [carros]` para testar todos juntos. Corrigir XML não elimina problemas de memória, colisões de spawn ou travamentos associados ao tamanho dos arquivos.
