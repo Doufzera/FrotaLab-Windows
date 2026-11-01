@@ -95,7 +95,9 @@ def read_meta(args):
     title, owner, name, ref, _ = repo
     url = "https://raw.githubusercontent.com/{}/{}/{}/{}".format(owner, name, urllib.parse.quote(ref, safe=""), urllib.parse.quote(path, safe="/"))
     raw = get(url, raw=True)
-    root = ET.fromstring(raw)
+    clean = raw.decode("utf-8-sig", errors="replace").replace("\x00", "")
+    clean = re.sub(r"<!--.*?-->", "", clean, flags=re.S)
+    root = ET.fromstring(clean)
     rows = []
     for item in root.findall(".//InitDatas/Item"):
         spawn = (item.findtext("modelName") or "").strip()
