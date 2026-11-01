@@ -12,7 +12,7 @@ XML_PATTERN = (
     "<?xml version='1.0' encoding='utf-8'?>\n"
     "<CVehicleModelInfo__InitDataList><InitDatas><Item>"
     "<modelName>{model}</modelName></Item></InitDatas>"
-    "{sep}</CVehicleModelInfo__InitDataList>"
+    "\n{sep}\n</CVehicleModelInfo__InitDataList>"
 )
 
 
@@ -75,7 +75,7 @@ class FusionTest(unittest.TestCase):
         self.write(self.inputs[3], "Lorefriendly-Cars-test/[lf-cars-sounds]/arias-sound/sfx/aria.awc",
                    b"sound")
         folder, report = build_fusion(self.inputs, self.res)
-        self.assertEqual(folder, self.res / "[carros]")
+        self.assertEqual(folder, (self.res / "[carros]").resolve())
         self.assertEqual(report["resumo"]["spawns_incluidos"], 3)
         self.assertEqual(len(report["conflitos_de_spawn"]), 1)
         self.assertEqual(report["conflitos_de_spawn"][0]["spawn"], "same")
