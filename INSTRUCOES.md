@@ -17,11 +17,10 @@
 
 ## Instalação do Pack 1 no FiveM
 
-- A partir da versão com a correção de exportação, a aba Exportação cria `PLOKS_CARS.zip` para o primeiro pacote. Depois de extrair, deve existir exatamente `resources/[carros]/PLOKS_CARS/fxmanifest.lua`, juntamente com `data/`, `stream/`, `server.lua` e `vehicle_names.lua`.
-- No `server.cfg`, use `ensure PLOKS_CARS`, **não** `ensure pacote_01` nem `ensure FiveM-Civ-Car-Pack-master`.
-- Inicie o servidor sem os outros packs de veículos para isolar conflitos. Se o servidor reiniciar durante a carga, desabilite temporariamente o recurso e consulte as primeiras linhas de erro do console/txAdmin antes do reinício.
-- O Pack 1 é muito grande. A correção de pastas não reduz o peso dos modelos ou o custo de carregamento. Os outros ZIPs do FrotaLab continuam sendo arquivos de origem, não recursos FiveM consolidados.
-
+- **Recomendado:** use o Pack 1 dividido em recursos `CIV_*` dentro de `resources/[carros]`.
+- **Não execute `ensure [carros]` nem `ensure PLOKS_CARS`**: houve travamento svMain ao carregar vários recursos de uma só vez.
+- A aba Exportação ainda permite gerar `PLOKS_CARS.zip`, mas esse backup completo não é o modo de inicialização recomendado.
+- A divisão e o início escalonado não otimizam texturas/modelos e não eliminam riscos de streaming.
 
 ## Aba Instalação — selecione o destino de cada pack
 
@@ -55,3 +54,21 @@ A origem PLOKMJNB/FiveM-Civ-Car-Pack inclui um comentário XML inválido na linh
 Se a instalação anterior falhou, preserve backup dos recursos existentes, remova ou renomeie a categoria `resources/[carros]` antiga **para fora da pasta resources**, e refaça a instalação do Pack 1 na aba **Instalação**, com a opção dividir por fabricantes marcada. O FrotaLab não sobrescreve categoria já ocupada. **Não é necessário baixar tudo outra vez se os arquivos originais já estiverem em `Documents/FrotaLab/originais/pacote_01`**.
 
 Depois, no console txAdmin, use `refresh` e `ensure CIV_ACURA`; caso funcione, experimente `ensure CIV_BUGATTI`. Não use `ensure PLOKS_CARS` ou `ensure [carros]` para testar todos juntos. Corrigir XML não elimina problemas de memória, colisões de spawn ou travamentos associados ao tamanho dos arquivos.
+
+## Inicialização escalonada opcional para o Pack 1
+
+Para evitar digitar dezenas de comandos e não reiniciar os recursos ativos:
+
+1. Instale o Pack 1 dividido por fabricantes dentro de `resources/[carros]`.
+2. Abra a nova aba **Inicialização** do FrotaLab.
+3. Escolha a pasta `resources` ou a própria categoria `[carros]`.
+4. Deixe o modo **Iniciar TODOS** desmarcado no primeiro teste: serão ativados só `CIV_ACURA` e `CIV_ASTONMARTIN`.
+5. Selecione o intervalo entre fabricantes (15 segundos por padrão).
+6. Clique em **Gerar iniciador escalonado do Pack 1**. O aplicativo criará `resources/frotalab_loader`.
+7. Com o servidor desligado, adicione `ensure frotalab_loader` ao final da seção de recursos essenciais no `server.cfg`, **removendo/desativando** `ensure [carros]` e `ensure PLOKS_CARS`.
+8. Inicie o servidor e acompanhe as mensagens `[FrotaLab Loader]`. O loader espera 20 segundos após iniciar.
+9. Só depois de confirmar que todos os 41 fabricantes conseguem permanecer **simultaneamente** ativos, edite `resources/frotalab_loader/config.lua` e mude `Config.StartAll = false` para `Config.StartAll = true`.
+
+Não instale duas cópias do loader nem tente sobrescrever o loader existente. Faça backup e mova a pasta antiga **para fora de resources** antes de gerar novamente.
+
+**Limitação:** o iniciador usa `StartResource` e `GetResourceState`, mas não é uma otimização dos carros. A inicialização escalonada pode aliviar os picos de carga, sem garantir ausência de travamentos, colisão de nomes de spawn ou problemas de memória. O FrotaLab não edita `server.cfg` nem inicia o servidor automaticamente.
