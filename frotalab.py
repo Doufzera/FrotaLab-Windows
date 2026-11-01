@@ -16,6 +16,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import xml.etree.ElementTree as ET
+from installer import GROUPS, destination_for, install_pack
 
 SOURCES = [
     ("PLOKMJNB - Civ Car Pack", "https://codeload.github.com/PLOKMJNB/FiveM-Civ-Car-Pack/zip/refs/heads/master"),
@@ -348,6 +349,8 @@ class FrotaLab(tk.Tk):
         self.busy = False
         self.base = Path.home() / "Documents" / "FrotaLab"
         self.sources_var = []
+        self.install_paths = [tk.StringVar(value="") for _ in range(4)]
+        self.pack1_split = tk.BooleanVar(value=True)
         self._style()
         self._layout()
         self.after(120, self._poll)
@@ -379,10 +382,12 @@ class FrotaLab(tk.Tk):
         ttk.Label(head, text="Auditoria e preparação segura de veículos FiveM / QBCore").pack(anchor="w")
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=22, pady=12)
-        download_tab, audit_tab, export_tab = (ttk.Frame(notebook) for _ in range(3))
+        download_tab, audit_tab, export_tab, install_tab = (
+            ttk.Frame(notebook) for _ in range(4))
         notebook.add(download_tab, text="Downloads")
         notebook.add(audit_tab, text="Auditoria")
         notebook.add(export_tab, text="Exportação")
+        notebook.add(install_tab, text="Instalação")
         ttk.Label(download_tab, text="Fontes configuradas").pack(anchor="w", pady=(20, 12))
         for name, url in SOURCES:
             v = tk.BooleanVar(value=True)
@@ -406,6 +411,33 @@ class FrotaLab(tk.Tk):
                    command=self.start_split_pack1).pack(anchor="w", pady=12)
         ttk.Button(export_tab, text="Abrir pasta de trabalho",
                    command=self.open_folder).pack(anchor="w", pady=8)
+        ttk.Label(install_tab, text="Selecione o destino de CADA pack (pasta resources do seu servidor).",
+                  wraplength=920).pack(anchor="w", pady=(16, 4))
+        ttk.Label(install_tab, text="O FrotaLab criará [carros], [carros2], [carros3] e [carros4]. "
+                  "Se você escolher a própria categoria, não criará uma pasta duplicada.",
+                  wraplength=920).pack(anchor="w", pady=(0, 10))
+        for i, (name, _) in enumerate(SOURCES):
+            frame = ttk.Frame(install_tab)
+            frame.pack(fill="x", padx=5, pady=(5, 3))
+            ttk.Label(frame, text=f"Pack {i+1} — {name} → {GROUPS[i+1]}").pack(anchor="w")
+            controls = ttk.Frame(frame)
+            controls.pack(fill="x", pady=(3, 0))
+            ttk.Entry(controls, textvariable=self.install_paths[i], width=62).pack(
+                side="left", fill="x", expand=True, padx=(0, 9))
+            ttk.Button(controls, text="Escolher pasta", command=lambda index=i:
+                       self.choose_install_folder(index)).pack(side="left", padx=(0, 8))
+            ttk.Button(controls, text=f"Instalar Pack {i+1}",
+                       command=lambda index=i: self.start_install_pack(index)).pack(side="left")
+        ttk.Checkbutton(install_tab,
+                        text="Pack 1: dividir por fabricantes (recomendado: testar uma marca por vez)",
+                        variable=self.pack1_split).pack(anchor="w", padx=5, pady=(12, 3))
+        ttk.Label(install_tab,
+                  text="Segurança: pastas de destino com conteúdo nunca são sobrescritas. "
+                  "Os arquivos originais permanecem intactos. Evite iniciar todos os "
+                  "recursos simultaneamente, especialmente o Pack 1.",
+                  wraplength=850).pack(anchor="w", padx=5, pady=(1, 7))
+        ttk.Button(install_tab, text="Instalar os 4 packs nos destinos escolhidos",
+                   command=self.start_install_all).pack(anchor="w", padx=5, pady=5)
         bottom = ttk.Frame(self)
         bottom.pack(fill="both", expand=False, padx=22, pady=(0, 20))
         ttk.Label(bottom, text="Pasta de trabalho: " + str(self.base),
@@ -513,6 +545,60 @@ class FrotaLab(tk.Tk):
             made = split_pack1_by_brand(self.base / "originais", output, notify)
             return (f"Pack 1 dividido em {len(made)} ZIPs de fabricantes. "
                     "Leia INSTRUCOES_PACK1.txt e teste uma marca por vez.")
+        self._background(work)
+
+    def choose_install_folder(self, index):
+        current = self.install_paths[index].get().strip()
+        initial = current if current and Path(current).is_dir() else str(Path.home())
+        folder = filedialog.askdirectory(
+            parent=self, title=f"Destino do Pack {index + 1}: escolha resources ou {GROUPS[index+1]}",
+            initialdir=initial, mustexist=True)
+        if folder:
+            self.install_paths[index].set(folder)
+            try:
+                target = destination_for(index + 1, Path(folder))
+                self.status.set(f"Destino do Pack {index + 1}: {target}")
+            except ValueError as exc:
+                messagebox.showwarning("FrotaLab", str(exc))
+
+    def start_install_pack(self, index):
+        selected = self.install_paths[index].get().strip()
+        if not selected:
+            messagebox.showwarning(
+                "FrotaLab", f"Escolha a pasta de destino do Pack {index+1}.")
+            return
+        split = self.pack1_split.get()
+        def work(notify):
+            target, resources = install_pack(
+                self.base / "originais", index+1, Path(selected),
+                split_pack1=split, notify=notify)
+            return (f"Pack {index+1} instalado em {target}: "
+                    f"{len(resources)} recursos. Leia INSTRUCOES_FROTALAB.txt. "
+                    "Não inicie todos os packs antes de validar conflitos.")
+        self._background(work)
+
+    def start_install_all(self):
+        selected = [item.get().strip() for item in self.install_paths]
+        if not all(selected):
+            messagebox.showwarning(
+                "FrotaLab", "Escolha as quatro pastas antes de instalar todos os packs.")
+            return
+        if not messagebox.askyesno(
+                "FrotaLab", "Instalar os quatro packs em seus destinos escolhidos?\n\n"
+                "Essa operação copia muitos gigabytes e não substitui pastas existentes.\n"
+                "Instale e teste os recursos individualmente antes de ativar todos."):
+            return
+        split = self.pack1_split.get()
+        def work(notify):
+            completed = []
+            for idx, folder in enumerate(selected, start=1):
+                notify(f"Iniciando Pack {idx}/4...")
+                target, resources = install_pack(
+                    self.base / "originais", idx, Path(folder),
+                    split_pack1=split, notify=notify)
+                completed.append(f"Pack {idx}: {target} ({len(resources)} recursos)")
+            return ("Instalações concluídas:\n" + "\n".join(completed) +
+                    "\nConsulte INSTRUCOES_FROTALAB.txt de cada categoria.")
         self._background(work)
 
     def open_folder(self):
