@@ -254,12 +254,16 @@ def scan_pack(source_root: Path, pack_id: int, notify=lambda _: None):
 def select_bundles(bundles: list[Bundle]):
     """Resolve conflitos por spawn sem dividir metadados ou tuning do veículo."""
     by_spawn = defaultdict(list)
+    viable = defaultdict(list)
     for bundle in bundles:
         for spawn in bundle.spawns:
             by_spawn[spawn].append(bundle)
+            # Não declare como instalável um carro sem arquivo YFT base.
+            if bundle.stream_dir is not None and bundle.model_ok:
+                viable[spawn].append(bundle)
     # Priorizar grupos com modelos únicos, para não descartar um carro exclusivo
     # ao escolher uma alternativa que tem o mesmo spawn de outro pacote.
-    uniques = {b for spawn, group in by_spawn.items() if len(group) == 1 for b in group}
+    uniques = {b for spawn, group in viable.items() if len(group) == 1 for b in group}
     selected, claimed = [], set()
     for b in sorted(uniques, key=lambda x: x.ranking()):
         if any(s in claimed for s in b.spawns):
@@ -270,7 +274,7 @@ def select_bundles(bundles: list[Bundle]):
     for spawn in sorted(by_spawn):
         if spawn in claimed:
             continue
-        candidates = [b for b in by_spawn[spawn] if not set(b.spawns) & claimed]
+        candidates = [b for b in viable[spawn] if not set(b.spawns) & claimed]
         if not candidates:
             continue
         b = min(candidates, key=lambda x: x.ranking())
@@ -368,7 +372,7 @@ def build_fusion(inputs: list[Path], resources_dir: Path,
             raise ValueError("Nenhum veículo com modelName válido foi encontrado.")
         chosen, missed, duplicates = select_bundles(bundles)
         if missed:
-            issues.append(f"Spawns sem grupo selecionável: {', '.join(missed)}")
+            issues.append(f"Spawns sem conjunto YFT válido/sem grupo selecionável: {', '.join(missed)}")
         by_pack = defaultdict(list)
         for b in chosen:
             by_pack[b.pack].append(b)
@@ -418,6 +422,19 @@ def build_fusion(inputs: list[Path], resources_dir: Path,
         for child in children:
             if not (child / "fxmanifest.lua").is_file():
                 raise ValueError(f"Recurso inválido: {child}")
+        # Colisões de nomes .yft/.ytd entre carros mantidos: não remover
+        # por nome de arquivo, pois peças de tuning podem ser compartilhadas.
+        assets = defaultdict(set)
+        for b in chosen:
+            if b.stream_dir is None:
+                continue
+            for p in b.stream_dir.rglob("*"):
+                if p.is_file() and p.suffix.lower() in (".yft", ".ytd", ".ydr"):
+                    assets[p.name.lower()].add(b.describe())
+        asset_collisions = [
+            {"arquivo": name, "recursos": sorted(groups)}
+            for name, groups in sorted(assets.items()) if len(groups) > 1
+        ]
         report = {
             "resumo": {
                 "candidatos": len(bundles),
@@ -425,10 +442,12 @@ def build_fusion(inputs: list[Path], resources_dir: Path,
                 "spawns_distintos_identificados": len({s for b in bundles for s in b.spawns}),
                 "spawns_incluidos": len({s for b in chosen for s in b.spawns}),
                 "spawns_sem_selecao": missed,
+                "arquivos_stream_nome_repetido": len(asset_collisions),
                 "recursos_na_categoria": len(children),
                 "metodo": "completude + tamanho estimado dos arquivos (sem medição de runtime)",
             },
             "conflitos_de_spawn": duplicates,
+            "conflitos_de_arquivos_stream": asset_collisions,
             "alertas": issues,
             "selecionados": [
                 {"origem": b.describe(), "spawns": list(b.spawns),
