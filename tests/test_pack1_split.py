@@ -41,8 +41,8 @@ class Pack1SplitTest(unittest.TestCase):
                     prefix = f"CIV_{brand}"
                     self.assertIn(f"{prefix}/fxmanifest.lua", z.namelist())
                     self.assertIn(f"{prefix}/data/{group}/{model}/vehicles.meta", z.namelist())
-                    self.assertIn(f"{prefix}/stream/{group}/{model}.yft", z.namelist())
-                    self.assertIn(f"{prefix}/stream/{group}/{model}.ytd", z.namelist())
+                    self.assertIn(f"{prefix}/stream/{group}/{model}/{model}.yft", z.namelist())
+                    self.assertIn(f"{prefix}/stream/{group}/{model}/{model}.ytd", z.namelist())
                     self.assertIn(model, z.read(f"{prefix}/vehicle_names.lua").decode())
                     self.assertNotIn("server_script", z.read(f"{prefix}/fxmanifest.lua").decode())
             self.assertEqual((src / "stream" / "[ACURA]" / "tltypes" / "tltypes.yft").read_bytes(), b"YFT_SAMPLE")
