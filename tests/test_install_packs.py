@@ -73,13 +73,13 @@ class InstallationTest(unittest.TestCase):
 
     def test_destinations_and_no_category_nesting(self):
         self.assertEqual(destination_for(1, self.resources),
-                         self.resources / "[carros]")
+                         (self.resources / "[carros]").resolve())
         own = self.resources / "[carros2]"
-        self.assertEqual(destination_for(2, own), own)
+        self.assertEqual(destination_for(2, own), own.resolve())
         with self.assertRaises(ValueError):
             destination_for(2, self.resources / "[carros]")
         for n, category in enumerate(["[carros]", "[carros2]", "[carros3]", "[carros4]"], 1):
-            self.assertEqual(destination_for(n, self.resources), self.resources / category)
+            self.assertEqual(destination_for(n, self.resources), (self.resources / category).resolve())
 
     def test_install_four_independent_categories(self):
         self.make_pack1()
@@ -90,7 +90,7 @@ class InstallationTest(unittest.TestCase):
         all_names = []
         for idx in range(1, 5):
             target, names = install_pack(self.origins, idx, self.resources)
-            self.assertEqual(target, self.resources / ("[carros]" if idx == 1 else f"[carros{idx}]"))
+            self.assertEqual(target, (self.resources / ("[carros]" if idx == 1 else f"[carros{idx}]")).resolve())
             self.assertTrue((target / "INSTRUCOES_FROTALAB.txt").is_file())
             for name in names:
                 self.assertTrue((target / name / "fxmanifest.lua").is_file())
@@ -118,7 +118,7 @@ class InstallationTest(unittest.TestCase):
         own.mkdir()
         target, names = install_pack(
             self.origins, 1, own, split_pack1=False)
-        self.assertEqual(target, own)
+        self.assertEqual(target, own.resolve())
         self.assertEqual(names, ["PLOKS_CARS"])
         self.assertTrue((own / "PLOKS_CARS/server.lua").is_file())
 
