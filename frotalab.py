@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import queue
+import re
 import shutil
 import threading
 import urllib.request
@@ -206,6 +207,136 @@ def export_packages(input_dir: Path, output_dir: Path, notify=lambda _: None):
     return made
 
 
+def split_pack1_by_brand(input_dir: Path, output_dir: Path, notify=lambda _: None):
+    """Build self-contained diagnostic FiveM resources per manufacturer.
+
+    Original source content remains untouched. This separates initialization
+    pressure; it does NOT optimize 3D assets nor prove runtime compatibility.
+    """
+    pack = input_dir / "pacote_01"
+    if not pack.is_dir():
+        raise ValueError("Pack 1 não foi extraído em originais/pacote_01.")
+    matches = list(pack.rglob("PLOKS_CARS/fxmanifest.lua"))
+    if len(matches) != 1:
+        raise ValueError("PLOKS_CARS/fxmanifest.lua ausente ou duplicado.")
+    source = matches[0].parent
+    data_dir, stream_dir = source / "data", source / "stream"
+    if not data_dir.is_dir() or not stream_dir.is_dir():
+        raise ValueError("A origem não contém data/ e stream/.")
+
+    data_groups = {d.name.upper(): d for d in data_dir.iterdir() if d.is_dir()}
+    stream_groups = {d.name.upper(): d for d in stream_dir.iterdir() if d.is_dir()}
+    if set(data_groups) != set(stream_groups):
+        missing_data = sorted(set(stream_groups) - set(data_groups))
+        missing_stream = sorted(set(data_groups) - set(stream_groups))
+        raise ValueError(
+            f"Fabricantes sem par data/stream: data={missing_data}, stream={missing_stream}")
+    if not data_groups:
+        raise ValueError("Nenhum fabricante reconhecido no Pack 1.")
+
+    names_source = (source / "vehicle_names.lua").read_text(
+        encoding="utf-8", errors="replace") if (source / "vehicle_names.lua").is_file() else ""
+    parsed_names = []
+    for line in names_source.splitlines():
+        match = re.search(r"AddTextEntry\(\s*['\"]([^'\"]+)['\"]\s*,", line)
+        if match:
+            parsed_names.append((match.group(1).lower(), line.strip()))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    created, manifest_report = [], []
+    for index, group_name in enumerate(sorted(data_groups), start=1):
+        data_group, stream_group = data_groups[group_name], stream_groups[group_name]
+        if not (group_name.startswith("[") and group_name.endswith("]")):
+            raise ValueError(f"Grupo inesperado: {group_name}")
+        brand = group_name[1:-1]
+        if not re.fullmatch(r"[A-Z0-9_-]+", brand):
+            raise ValueError(f"Nome de fabricante inseguro: {group_name}")
+        files_data = sorted(p for p in data_group.rglob("*") if p.is_file())
+        files_stream = sorted(p for p in stream_group.rglob("*") if p.is_file())
+        if not files_data or not files_stream:
+            raise ValueError(f"Grupo incompleto: {group_name}")
+
+        models = set()
+        for meta_file in data_group.rglob("vehicles.meta"):
+            try:
+                root = ET.parse(meta_file).getroot()
+            except ET.ParseError as exc:
+                raise ValueError(f"vehicles.meta inválido: {meta_file}: {exc}") from exc
+            for item in root.findall(".//InitDatas/Item"):
+                for tag in ("modelName", "gameName"):
+                    value = item.findtext(tag)
+                    if value:
+                        models.add(value.strip().lower())
+
+        resource_name = f"CIV_{brand}"
+        final_zip = output_dir / f"{resource_name}.zip"
+        partial = final_zip.with_suffix(".partial")
+        manifest = (
+            "fx_version 'cerulean'\n"
+            "game 'gta5'\n"
+            "author 'PLOKMJNB - pack reorganizado para diagnóstico'\n"
+            f"description 'Pack 1 - {brand} (original preservado)'\n"
+            "files {\n"
+            "    'data/**/*.meta',\n"
+            "    'data/**/*.xml',\n"
+            "    'data/**/*.dat',\n"
+            "    'data/**/*.ytyp'\n"
+            "}\n"
+            "data_file 'HANDLING_FILE' 'data/**/handling*.meta'\n"
+            "data_file 'VEHICLE_LAYOUTS_FILE' 'data/**/vehiclelayouts*.meta'\n"
+            "data_file 'VEHICLE_METADATA_FILE' 'data/**/vehicles*.meta'\n"
+            "data_file 'CARCOLS_FILE' 'data/**/carcols*.meta'\n"
+            "data_file 'VEHICLE_VARIATION_FILE' 'data/**/carvariations*.meta'\n"
+            "data_file 'CONTENT_UNLOCKING_META_FILE' 'data/**/*unlocks.meta'\n"
+            "data_file 'PTFXASSETINFO_FILE' 'data/**/ptfxassetinfo.meta'\n"
+            "client_script 'vehicle_names.lua'\n"
+        )
+        relevant = [line for key, line in parsed_names if key in models]
+        names_lua = "CreateThread(function()\n"
+        if relevant:
+            names_lua += "    " + "\n    ".join(relevant) + "\n"
+        names_lua += "end)\n"
+        try:
+            with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED,
+                                 compresslevel=1, allowZip64=True) as z:
+                z.writestr(f"{resource_name}/fxmanifest.lua", manifest)
+                z.writestr(f"{resource_name}/vehicle_names.lua", names_lua)
+                for file in files_data:
+                    rel = file.relative_to(data_group).as_posix()
+                    z.write(file, f"{resource_name}/data/{group_name}/{rel}")
+                for file in files_stream:
+                    rel = file.relative_to(stream_group).as_posix()
+                    z.write(file, f"{resource_name}/stream/{group_name}/{rel}")
+            with zipfile.ZipFile(partial) as z:
+                if z.testzip() is not None:
+                    raise ValueError(f"CRC inválido: {resource_name}")
+                if f"{resource_name}/fxmanifest.lua" not in z.namelist():
+                    raise ValueError(f"Manifest ausente: {resource_name}")
+            partial.replace(final_zip)
+        finally:
+            partial.unlink(missing_ok=True)
+        created.append(final_zip.name)
+        manifest_report.append({"resource": resource_name, "brand": brand,
+                                "models_found": sorted(models),
+                                "data_files": len(files_data), "stream_files": len(files_stream)})
+        notify(f"Pack 1 dividido: {index}/{len(data_groups)} - {resource_name}")
+
+    (output_dir / "INSTRUCOES_PACK1.txt").write_text(
+        "PACOTE 1 DIVIDIDO POR FABRICANTE - DIAGNOSTICO\n"
+        "1. Faça backup do servidor e DESATIVE o recurso PLOKS_CARS original.\n"
+        "2. Não use ensure [carros] para ligar TODOS os grupos simultaneamente.\n"
+        "3. Extraia inicialmente apenas CIV_ACURA.zip em resources/[carros]/.\n"
+        "4. No console, use refresh e ensure CIV_ACURA.\n"
+        "5. Se funcionar, inclua outra marca por vez. Ex.: ensure CIV_AUDI.\n"
+        "6. Se uma marca causar travamento, pare e confira log do FXServer/txAdmin.\n"
+        "7. Os .yft/.ytd são originais; esta separação NÃO otimiza FPS, RAM ou LODs.\n"
+        "8. Confirme in-game cada modelo, tuning, texturas e áudio.\n",
+        encoding="utf-8")
+    (output_dir / "relatorio_marcas.json").write_text(
+        json.dumps(manifest_report, ensure_ascii=False, indent=2), encoding="utf-8")
+    return created
+
+
 class FrotaLab(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -271,6 +402,8 @@ class FrotaLab(tk.Tk):
                   wraplength=700).pack(anchor="w", pady=(25, 12))
         ttk.Button(export_tab, text="Gerar ZIPs verificados",
                    command=self.start_export).pack(anchor="w", pady=12)
+        ttk.Button(export_tab, text="Dividir Pack 1 por fabricante (diagnóstico)",
+                   command=self.start_split_pack1).pack(anchor="w", pady=12)
         ttk.Button(export_tab, text="Abrir pasta de trabalho",
                    command=self.open_folder).pack(anchor="w", pady=8)
         bottom = ttk.Frame(self)
@@ -369,6 +502,17 @@ class FrotaLab(tk.Tk):
             made = export_packages(self.base / "originais",
                                    self.base / "exportados", notify)
             return f"ZIPs gerados e CRC verificado: {len(made)}. Veja a pasta exportados."
+        self._background(work)
+
+    def start_split_pack1(self):
+        if not (self.base / "originais" / "pacote_01").is_dir():
+            messagebox.showwarning("FrotaLab", "Primeiro baixe e extraia o Pack 1.")
+            return
+        def work(notify):
+            output = self.base / "exportados" / "pack1_por_marca"
+            made = split_pack1_by_brand(self.base / "originais", output, notify)
+            return (f"Pack 1 dividido em {len(made)} ZIPs de fabricantes. "
+                    "Leia INSTRUCOES_PACK1.txt e teste uma marca por vez.")
         self._background(work)
 
     def open_folder(self):
