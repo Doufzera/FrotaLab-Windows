@@ -9,8 +9,8 @@ from __future__ import annotations
 import re
 import shutil
 import tempfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
+from metadata_repair import parse_vehicle_meta
 
 
 GROUPS = {1: "[carros]", 2: "[carros2]", 3: "[carros3]", 4: "[carros4]"}
@@ -103,16 +103,23 @@ def _write_pack1_by_brand(source: Path, target: Path, notify, status: list[int])
         _copy_tree(stream_groups[group_name], brand_root / "stream" / group_name,
                    notify, status)
         models = set()
+        repairs = []
         for meta_file in data_groups[group_name].rglob("vehicles*.meta"):
-            try:
-                xml = ET.parse(meta_file).getroot()
-            except ET.ParseError as exc:
-                raise ValueError(f"vehicles.meta inválido: {meta_file}: {exc}") from exc
+            xml, patched, count = parse_vehicle_meta(meta_file)
+            if patched is not None:
+                copied = brand_root / "data" / group_name / meta_file.relative_to(data_groups[group_name])
+                copied.write_bytes(patched)
+                repairs.append(f"{meta_file.relative_to(source)}: {count} separador(es) XML corrigido(s)")
+                notify(f"Reparo seguro no recurso {name}: {meta_file.name} ({count} separador(es))")
             for item in xml.findall(".//InitDatas/Item"):
                 for tag in ("modelName", "gameName"):
                     value = item.findtext(tag)
                     if value:
                         models.add(value.strip().lower())
+        if repairs:
+            (brand_root / "CORRECOES_META.txt").write_text(
+                "Correções aplicadas apenas à CÓPIA de instalação:\n" +
+                "\n".join(repairs) + "\n", encoding="utf-8")
         lines = [line for key, line in entries if key in models]
         script = "CreateThread(function()\n"
         if lines:
@@ -128,7 +135,20 @@ def _write_pack1_by_brand(source: Path, target: Path, notify, status: list[int])
 def _write_pack1_single(source: Path, target: Path, notify, status: list[int]):
     if not (source / "data").is_dir() or not (source / "stream").is_dir():
         raise ValueError("PLOKS_CARS sem as pastas data e stream.")
-    _copy_tree(source, target / "PLOKS_CARS", notify, status)
+    copied_root = target / "PLOKS_CARS"
+    _copy_tree(source, copied_root, notify, status)
+    repairs = []
+    for meta_file in (source / "data").rglob("vehicles*.meta"):
+        _, patched, count = parse_vehicle_meta(meta_file)
+        if patched is not None:
+            copied = copied_root / meta_file.relative_to(source)
+            copied.write_bytes(patched)
+            repairs.append(f"{meta_file.relative_to(source)}: {count} separador(es) XML corrigido(s)")
+            notify(f"Reparo XML: {meta_file.name} ({count} separador(es))")
+    if repairs:
+        (copied_root / "CORRECOES_META.txt").write_text(
+            "Correções aplicadas apenas à CÓPIA de instalação:\n" +
+            "\n".join(repairs) + "\n", encoding="utf-8")
     return ["PLOKS_CARS"]
 
 
