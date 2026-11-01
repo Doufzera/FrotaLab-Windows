@@ -18,6 +18,7 @@ from tkinter import filedialog, messagebox, ttk
 import xml.etree.ElementTree as ET
 from installer import GROUPS, destination_for, install_pack
 from metadata_repair import parse_vehicle_meta
+from startup_loader import create_loader
 
 SOURCES = [
     ("PLOKMJNB - Civ Car Pack", "https://codeload.github.com/PLOKMJNB/FiveM-Civ-Car-Pack/zip/refs/heads/master"),
@@ -364,6 +365,9 @@ class FrotaLab(tk.Tk):
         self.sources_var = []
         self.install_paths = [tk.StringVar(value="") for _ in range(4)]
         self.pack1_split = tk.BooleanVar(value=True)
+        self.loader_path = tk.StringVar(value="")
+        self.loader_start_all = tk.BooleanVar(value=False)
+        self.loader_interval = tk.StringVar(value="15")
         self._style()
         self._layout()
         self.after(120, self._poll)
@@ -395,12 +399,13 @@ class FrotaLab(tk.Tk):
         ttk.Label(head, text="Auditoria e preparação segura de veículos FiveM / QBCore").pack(anchor="w")
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=22, pady=12)
-        download_tab, audit_tab, export_tab, install_tab = (
-            ttk.Frame(notebook) for _ in range(4))
+        download_tab, audit_tab, export_tab, install_tab, loader_tab = (
+            ttk.Frame(notebook) for _ in range(5))
         notebook.add(download_tab, text="Downloads")
         notebook.add(audit_tab, text="Auditoria")
         notebook.add(export_tab, text="Exportação")
         notebook.add(install_tab, text="Instalação")
+        notebook.add(loader_tab, text="Inicialização")
         ttk.Label(download_tab, text="Fontes configuradas").pack(anchor="w", pady=(20, 12))
         for name, url in SOURCES:
             v = tk.BooleanVar(value=True)
@@ -451,6 +456,40 @@ class FrotaLab(tk.Tk):
                   wraplength=850).pack(anchor="w", padx=5, pady=(1, 7))
         ttk.Button(install_tab, text="Instalar os 4 packs nos destinos escolhidos",
                    command=self.start_install_all).pack(anchor="w", padx=5, pady=5)
+        ttk.Label(loader_tab,
+                  text="Iniciador escalonado para o Pack 1, sem reiniciar os recursos já ativos.",
+                  wraplength=880).pack(anchor="w", pady=(20, 8))
+        ttk.Label(loader_tab,
+                  text="Escolha a pasta resources do FiveM que já contém [carros]/CIV_*.",
+                  wraplength=880).pack(anchor="w", pady=(0, 8))
+        loader_dir = ttk.Frame(loader_tab)
+        loader_dir.pack(fill="x", pady=(0, 12))
+        ttk.Entry(loader_dir, textvariable=self.loader_path, width=67).pack(
+            side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Button(loader_dir, text="Escolher resources",
+                   command=self.choose_loader_folder).pack(side="left")
+        ttk.Checkbutton(
+            loader_tab,
+            text="Iniciar TODOS os fabricantes (use somente após testar todos ativos juntos)",
+            variable=self.loader_start_all).pack(anchor="w", pady=(10, 6))
+        interval_frame = ttk.Frame(loader_tab)
+        interval_frame.pack(anchor="w", pady=10)
+        ttk.Label(interval_frame, text="Intervalo entre fabricantes (segundos): ").pack(side="left")
+        ttk.Combobox(interval_frame, textvariable=self.loader_interval,
+                     values=("5", "10", "15", "20", "30", "45", "60"),
+                     state="readonly", width=8).pack(side="left", padx=(6, 0))
+        ttk.Label(loader_tab,
+                  text="Segurança: por padrão só Acura e Aston Martin serão iniciados. "
+                  "O programa cria resources/frotalab_loader e NÃO edita server.cfg; "
+                  "você escolhe quando ativá-lo.",
+                  wraplength=870).pack(anchor="w", pady=(9, 11))
+        ttk.Button(loader_tab, text="Gerar iniciador escalonado do Pack 1",
+                   command=self.start_generate_loader).pack(anchor="w", pady=9)
+        ttk.Label(loader_tab,
+                  text="Depois, desative ensure [carros] e ensure PLOKS_CARS no server.cfg. "
+                  "Inclua ensure frotalab_loader após os recursos essenciais do QBCore. "
+                  "Não ative dois métodos de inicialização ao mesmo tempo.",
+                  wraplength=860).pack(anchor="w", pady=10)
         bottom = ttk.Frame(self)
         bottom.pack(fill="both", expand=False, padx=22, pady=(0, 20))
         ttk.Label(bottom, text="Pasta de trabalho: " + str(self.base),
@@ -612,6 +651,42 @@ class FrotaLab(tk.Tk):
                 completed.append(f"Pack {idx}: {target} ({len(resources)} recursos)")
             return ("Instalações concluídas:\n" + "\n".join(completed) +
                     "\nConsulte INSTRUCOES_FROTALAB.txt de cada categoria.")
+        self._background(work)
+
+    def choose_loader_folder(self):
+        current = self.loader_path.get().strip() or self.install_paths[0].get().strip()
+        initial = current if current and Path(current).is_dir() else str(Path.home())
+        folder = filedialog.askdirectory(
+            parent=self, title="Pasta resources com [carros]/CIV_*",
+            initialdir=initial, mustexist=True)
+        if folder:
+            self.loader_path.set(folder)
+
+    def start_generate_loader(self):
+        chosen = self.loader_path.get().strip() or self.install_paths[0].get().strip()
+        if not chosen:
+            messagebox.showwarning(
+                "FrotaLab", "Escolha a pasta resources que contém [carros]/CIV_*.")
+            return
+        start_all = self.loader_start_all.get()
+        try:
+            interval = int(self.loader_interval.get())
+        except ValueError:
+            messagebox.showwarning("FrotaLab", "Escolha um intervalo válido.")
+            return
+        if start_all and not messagebox.askyesno(
+            "FrotaLab", "Você selecionou iniciar TODOS os fabricantes.\n\n"
+            "Confirma que já testou todos eles ativos simultaneamente e deseja "
+            "prosseguir com a inicialização escalonada?"):
+            return
+        def work(notify):
+            folder, names = create_loader(
+                Path(chosen), start_all=start_all, interval_seconds=interval,
+                notify=notify)
+            return (f"Iniciador criado em {folder} com {len(names)} fabricantes. "
+                    f"Modo: {'TODOS' if start_all else 'TESTE (2 recursos)'}. "
+                    "Leia LEIA-ME.txt e configure ensure frotalab_loader "
+                    "no server.cfg, sem usar ensure [carros].")
         self._background(work)
 
     def open_folder(self):
