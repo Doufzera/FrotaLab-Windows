@@ -21,3 +21,28 @@
 - No `server.cfg`, use `ensure PLOKS_CARS`, **não** `ensure pacote_01` nem `ensure FiveM-Civ-Car-Pack-master`.
 - Inicie o servidor sem os outros packs de veículos para isolar conflitos. Se o servidor reiniciar durante a carga, desabilite temporariamente o recurso e consulte as primeiras linhas de erro do console/txAdmin antes do reinício.
 - O Pack 1 é muito grande. A correção de pastas não reduz o peso dos modelos ou o custo de carregamento. Os outros ZIPs do FrotaLab continuam sendo arquivos de origem, não recursos FiveM consolidados.
+
+
+## Aba Instalação — selecione o destino de cada pack
+
+1. Baixe e extraia os quatro pacotes pela aba **Downloads**.
+2. Abra a aba **Instalação**. Há um botão **Escolher pasta** independente para cada um dos quatro packs.
+3. Selecione a pasta de recursos do seu servidor, por exemplo D:\FiveM\server\resources. Pode ser a mesma pasta resources para todos ou pastas resources de servidores diferentes.
+4. Para cada pack, o FrotaLab **cria automaticamente** a categoria:
+   - Pack 1 → resources\[carros]\
+   - Pack 2 → resources\[carros2]\
+   - Pack 3 → resources\[carros3]\
+   - Pack 4 → resources\[carros4]\
+5. Se você selecionar a própria pasta [carrosN], o programa a usa diretamente e **não** cria [carrosN]\[carrosN].
+6. Clique em **Instalar Pack N**, um a um, ou em **Instalar os 4 packs nos destinos escolhidos**.
+7. A instalação cria um INSTRUCOES_FROTALAB.txt dentro de cada categoria, com os nomes dos recursos para iniciar individualmente.
+8. O FrotaLab **não substitui nem apaga** uma categoria já ocupada. Para reinstalar, faça backup e deixe a categoria vazia; o original exportado e os downloads permanecem intactos.
+
+### Conteúdo das categorias
+
+- [carros]: o Pack 1 é dividido por fabricante por padrão (CIV_ACURA, CIV_AUDI, etc.), para permitir testes separados. A opção de manter PLOKS_CARS inteiro existe, **mas já provocou travamento svMain neste servidor**.
+- [carros2]: Lore_Friendly_Car_Pack e os seis packs de rodas encontrados.
+- [carros3]: LNWK-CARS (sem as configurações alternativas de DriftHandling, que permanecem salvas na pasta originais).
+- [carros4]: LIVID_LF_CARS e seus recursos de som auxiliares, em pastas separadas.
+
+**Cuidado**: ensure [carros] pode ativar muitas marcas e reintroduzir o travamento. Após a instalação, no console txAdmin use refresh seguido de ensure CIV_ACURA e avance uma marca por vez. Teste também os demais pacotes separadamente; nomes de spawn repetidos continuam sendo uma fonte possível de conflito. **Instalar os arquivos não inicia os recursos no servidor**. O processo copia arquivos, não altera o server.cfg nem reinicia o FiveM.
