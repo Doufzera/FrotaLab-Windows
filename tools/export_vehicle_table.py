@@ -162,6 +162,8 @@ def main():
                     results.extend(future.result())
                 except Exception as err:
                     failures.append({"Pacote de origem": repo[0], "Caminho": path, "Erro": str(err)})
+        for failure in failures:
+            print("ERRO_META:", json.dumps(failure, ensure_ascii=False), flush=True)
         print("Total", len(results), "erros", len(failures), flush=True)
     if not results:
         raise RuntimeError("Não foram encontrados veículos: abortando planilha vazia")
